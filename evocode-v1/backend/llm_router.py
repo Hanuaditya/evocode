@@ -51,7 +51,7 @@ def get_coding_llm(temperature: float = 0.0) -> Any:
     if not api_key:
         raise ValueError("GEMINI_API_KEY is missing from environment / .env")
 
-    model_name = os.getenv("GEMINI_PRIMARY_MODEL", "gemini-3.5-flash")
+    model_name = os.getenv("GEMINI_PRIMARY_MODEL", "gemini-2.5-flash")
 
     if not ChatGoogleGenerativeAI:
         raise RuntimeError("langchain-google-genai package is not installed")
@@ -92,7 +92,7 @@ def get_triage_llm(temperature: float = 0.0) -> Any:
     if not api_key:
         raise ValueError("GEMINI_API_KEY is missing from environment / .env")
 
-    model_name = os.getenv("GEMINI_LITE_MODEL", os.getenv("GEMINI_PRIMARY_MODEL", "gemini-3.5-flash"))
+    model_name = os.getenv("GEMINI_LITE_MODEL", os.getenv("GEMINI_PRIMARY_MODEL", "gemini-2.5-flash"))
     logger.info(f"[llm_router] Using Gemini ({model_name}) for triage")
     return ChatGoogleGenerativeAI(
         model=model_name,

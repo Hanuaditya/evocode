@@ -249,7 +249,7 @@ def generate_plan(issue_id: int, db: Session = Depends(get_db)):
     if not api_key:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY not set")
 
-    model_name = os.getenv("GEMINI_PRIMARY_MODEL", "gemini-3.5-flash")
+    model_name = os.getenv("GEMINI_PRIMARY_MODEL", "gemini-2.5-flash")
     planner_llm = ChatGoogleGenerativeAI(
         model=model_name,
         google_api_key=api_key,
