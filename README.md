@@ -1,407 +1,248 @@
-# EvoCode 🤖
+# EvoCode V2 🤖🚀
 
 <div align="center">
 
-**AI-Powered Agentic Developer Dashboard**
+**100% Autonomous, Visually Verified Pull Request Platform with One-Click Production Deployment**
 
-*Bridges the gap between client feature requests and production-ready pull requests — automatically.*
+*From user comment upvotes to verified, production-deployed GitHub PRs — at $0/month.*
 
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Next.js](https://img.shields.io/badge/Next.js-14-black?style=flat-square&logo=next.js&logoColor=white)](https://nextjs.org/)
-[![LangChain](https://img.shields.io/badge/LangChain-Gemini_2.5_Flash-1C3C3C?style=flat-square&logo=langchain&logoColor=white)](https://langchain.com/)
-[![License](https://img.shields.io/badge/License-Demo-orange?style=flat-square)](./LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Next.js](https://img.shields.io/badge/Next.js-14%2F15-black?style=flat-square&logo=next.js&logoColor=white)](https://nextjs.org/)
+[![Gemini](https://img.shields.io/badge/Google_Gemini-3.8_Flash-4285F4?style=flat-square&logo=google&logoColor=white)](https://aistudio.google.com/)
+[![Groq](https://img.shields.io/badge/Groq-Llama_3.3_70B-F55036?style=flat-square)](https://groq.com/)
+[![Playwright](https://img.shields.io/badge/Playwright-Headless_Chromium-2EAD33?style=flat-square&logo=playwright&logoColor=white)](https://playwright.dev/)
+[![Tree--Sitter](https://img.shields.io/badge/py--tree--sitter-AST_Guards-5C6BC0?style=flat-square)](https://tree-sitter.github.io/)
+[![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](./LICENSE)
 
 </div>
 
 ---
 
-## 🌟 What is EvoCode?
+## 🌟 What is EvoCode V2?
 
-EvoCode is a full-stack platform that acts as an **AI Product Manager + AI Software Engineer**. Developers submit feature requests or bug reports through a dashboard, an AI planning agent generates a confidence-scored implementation plan, and — upon approval — an AI coding agent reads the codebase, writes the fix, runs tests in a sandbox, and **opens a GitHub Pull Request automatically**.
+**EvoCode V2** transforms static software development by closing the feedback loop between website visitors and production releases. 
 
-No more back-and-forth tickets. No more hallucinated code. Just request → plan → review → ship.
-
----
-
-## ✨ Key Features
-
-| Feature | Description |
-|---|---|
-| 🧠 **AI Planning Agent** | Gemini 2.5 Flash generates a structured implementation plan with a 0–100 Confidence Score |
-| 🔒 **Dynamic Guardrails** | High-risk changes (confidence < 70) are flagged, blocking auto-execution and surfacing a strategy guide |
-| 🤖 **AI Coding Agent** | LangChain agent with file-read/write tools — reads actual codebase files before writing any code |
-| 🧪 **Automated Sandbox** | Runs `npm test` against generated code in an isolated subprocess before any commit |
-| 🚀 **GitHub Automation** | Creates a feature branch, commits changes, and opens a Pull Request via the GitHub API |
-| 📡 **Real-time Streaming** | Live agent execution logs streamed to the dashboard via Server-Sent Events (SSE) |
-| 📋 **Triage Dashboard** | Lists all feature requests with full status tracking |
-| 🔁 **Human-in-the-Loop** | Two-step flow: Plan → Review → Execute. You always stay in control |
+1. **Community Comments & Silent Telemetry:** Visitors submit feature requests or report bugs via the embedded `FeedbackComments` widget on the target website. The widget automatically attaches page route telemetry and trapped browser console errors.
+2. **Semantic Clustering & 3-Tier Free LLM Router:** Similar user requests are clustered semantically into a single `FeatureSignal` using Groq / Gemini 3.8 Flash. Vague comments receive an instant 1-line AI clarification reply.
+3. **Threshold Gate & Ephemeral Worktree Sandbox:** The moment upvotes hit `UPVOTE_THRESHOLD`, EvoCode spins up an isolated `git worktree` and container sandbox.
+4. **`py-tree-sitter` AST Context & Syntax Guard:** LangGraph surgical edits (`replace_in_file`) undergo instant post-edit AST syntax checks. If a syntax error is introduced, it is rolled back before tests run.
+5. **Multi-Modal Visual Verification:** An ephemeral test server boots up; **Playwright** captures console errors and Before/After screenshots (`1280x800`). Multimodal **Gemini 3.8 Flash** evaluates visual correctness with up to 3 self-healing retries.
+6. **One-Click Auto-Ship & Production Webhook:** The developer inspects Where/Why/When/Proof on the Evidence Review dashboard. A single click on **Approve & Ship** squash-merges the PR, auto-closes the GitHub issue (`Closes #X`), deletes the feature branch, and triggers Vercel production deployment — flipping the target site's comment badge to **Shipped Live** via verified GitHub webhook.
 
 ---
 
-## 🏗️ Architecture Overview
+## 🏗️ Master Architecture
 
-```
-┌─────────────────────────────────────────────────────┐
-│                    Frontend (Next.js)                │
-│  Landing Page → Sign Up → Triage Dashboard          │
-│  Developer Build View (Plan Review + Execution SSE) │
-└────────────────────┬────────────────────────────────┘
-                     │ REST + SSE
-┌────────────────────▼────────────────────────────────┐
-│                 Backend (FastAPI)                    │
-│                                                     │
-│  POST /api/report              → Save feature req   │
-│  POST /api/issues/{id}/plan    → AI Planning Agent  │
-│  POST /api/issues/{id}/execute → AI Coding Agent    │
-│  GET  /api/features/{id}/execute/stream → SSE logs  │
-│                                                     │
-│  ┌──────────────┐  ┌───────────────┐  ┌──────────┐ │
-│  │ AgentOrchest.│→ │LangChain      │→ │ GitHub   │ │
-│  │ (Coordinator)│  │CodeAgent+Tools│  │ Manager  │ │
-│  └──────────────┘  └──────┬────────┘  └──────────┘ │
-│                           │                         │
-│                    ┌──────▼───────┐                 │
-│                    │SandboxRunner │                 │
-│                    │  (npm test)  │                 │
-│                    └──────────────┘                 │
-│                                                     │
-│       SQLite DB: IssueReports · FixAttempts · PRs   │
-└─────────────────────────────────────────────────────┘
-```
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Website Visitor
+    participant Site as Target Website (FeedbackComments)
+    participant API as EvoCode Backend (FastAPI)
+    participant Router as LLM Router (Gemini / Groq)
+    participant Context as Context Engine (py-tree-sitter)
+    participant Sandbox as Sandbox (Worktree + Docker)
+    participant Vision as Visual Verifier (Playwright + Gemini Vision)
+    participant GitHub as GitHub & Vercel
+    actor Dev as Developer Dashboard
 
-### Agentic Flow (Happy Path)
+    User->>Site: Submit feedback or upvote idea
+    Site->>API: POST /api/comments (route + console errors)
+    API->>Router: Semantic triage & clustering
+    Router-->>API: Clustered FeatureSignal
 
-```
-Submit Request → [AI Plan + Confidence Score] → Developer Reviews
-    → APPROVE → Coding Agent reads files → Writes fix
-    → Sandbox runs npm test → Tests pass → GitHub PR created ✅
-                                         → Tests fail → Retry (max 3)
-```
+    User->>Site: Upvote comment
+    Site->>API: POST /api/comments/{id}/upvote
+    Note over API: Upvotes >= UPVOTE_THRESHOLD
+    API->>Context: Map routes & extract AST symbol graph
+    API->>Sandbox: Create ephemeral git worktree
+    Sandbox->>Sandbox: LangGraph ReAct edits + AST syntax guard
+    Sandbox->>Vision: Playwright Chromium Before/After screenshots
+    Vision->>Router: Multimodal visual verdict
+    API->>GitHub: Create Issue + Open Pull Request (Closes #X)
+    GitHub-->>API: Capture Vercel Preview URL
 
-### Guardrail Path (Assist Mode)
-
-```
-Submit Request → [AI Plan, Confidence < 70] → APPROVE button disabled
-    → Strategy Guide displayed → Developer codes manually in IDE
+    Dev->>API: Open Evidence Review (Where/Why/When/Proof)
+    Dev->>API: POST /api/signals/{id}/approve (Approve & Ship)
+    API->>GitHub: Squash-merge PR, delete branch, close issue
+    GitHub->>API: POST /api/webhooks/github (deployment_status: success)
+    API->>Site: Flip badge to "Shipped Live" (GET /api/comments)
 ```
 
 ---
 
-## 🧠 How the Confidence Score Works
+## 🧠 State Machine & Dual-Mode Autonomy Guardrails
 
-The AI planner (Gemini) evaluates each request and assigns a score from 0–100:
+```
+gathering_votes ──(threshold reached)──► queued ──► planning ──► coding ──► verifying
+                                                                                │
+                   ┌────────────────────────────────────────────────────────────┴──────────┐
+                   ▼                                                                       ▼
+      [Confidence Score >= 70]                                                [Confidence Score < 70]
+         Autonomous PR-First                                                   Assist Mode (Safety Net)
+                   │                                                                       │
+                   ▼                                                                       ▼
+             pr_ready                                                             assist_mode_blocked
+                   │                                                                       │
+      ┌────────────┴────────────┐                                                          │
+      ▼                         ▼                                                          │
+Approve & Ship               Reject                                                        │
+      │                         │                                                          │
+      ▼                         ▼                                                          │
+approved_shipped             rejected                                           Manual IDE Strategy Guide
+      │                                                                         (Auto-merge locked)
+      ▼
+Shipped Live Badge
+```
 
-| Score | Risk Level | Blocked? | Action |
-|---|---|---|---|
-| **90–100** | 🟢 Low — text/CSS/label change | No | ✅ APPROVE button enabled |
-| **70–89** | 🟡 Medium — component logic change | No | ✅ APPROVE button enabled |
-| **< 70** | 🔴 High — multi-file / DB / API change | **Yes** | 🔒 Assist Mode: strategy guide shown |
+| Confidence Score | Mode | Automated Actions | Human Gate |
+| :--- | :--- | :--- | :--- |
+| **`>= 70`** | **Autonomous PR-First** | Issue opened → Code edited in worktree → Tests + Playwright visual verified → PR ready with Vercel Preview URL | End-of-day 1-click **Approve & Ship** |
+| **`< 70`** | **Assist Mode** | Issue opened → `PLAN.md` + Strategy Guide generated → Auto-merge locked | Developer reviews guide and executes manual changes |
 
 ---
 
-## 📂 Project Structure
+## 💸 Verified 2026 Zero-Cost Tech Stack ($0/Month)
 
-```
+| Layer | Component | Verified Free Tier | Role in EvoCode V2 |
+| :--- | :--- | :--- | :--- |
+| **Primary Brain** | Google Gemini 3.8 Flash | Free standard I/O + context caching | Planner, LangGraph Code Agent, Multimodal Visual Judge |
+| **Fast Triage & Failover** | Groq & OpenRouter `:free` | Groq: 30 RPM / 30K TPM (Llama 3.1 8B / 3.3 70B); OpenRouter: 20 RPM | Low-latency comment deduplication, vagueness checks, 429 failover |
+| **Context & Syntax Guard** | `py-tree-sitter` | 100% Free, local, zero-latency | AST symbol extraction, Next.js route mapping, post-edit syntax verification |
+| **Sandbox Isolation** | Ephemeral `git worktree` + Docker | Local daemon / non-root subprocess | Zero-pollution workspace isolation with clean `finally` teardown |
+| **Visual Verification** | Headless Playwright Chromium | 100% Free (Apache-2.0) | Traps browser errors, captures 1280x800 Before/After screenshots |
+| **Live Previews & CD** | Vercel Hobby + GitHub API | 100 deploys/day, automatic PR previews | Live HTTPS preview per PR branch; production deployment on merge |
+| **Database & Stream** | SQLAlchemy (SQLite / Supabase Postgres) | Free SQLite local / 500 MB Postgres | Event audit trail, comment clusters, real-time SSE telemetry |
+
+---
+
+## 📂 Repository Structure
+
+```text
 evo-code/
-├── docs/
-│   ├── architecture.md                    # V1 Mermaid architecture diagrams
-│   └── architecture-v1-prototype.md       # V2 vision & guardrail flow diagrams
-│
+├── README.md                                # Master documentation & architecture
+├── evocode.db                               # Local SQLite database
 └── evocode-v1/
-    ├── backend/                           # FastAPI Python server
-    │   ├── main.py                        # All API routes & lifespan hooks
-    │   ├── models.py                      # SQLAlchemy ORM models
-    │   ├── database.py                    # DB engine & session factory
-    │   ├── config.py                      # App configuration
-    │   ├── requirements.txt               # Python dependencies
-    │   ├── .env                           # ⚠️ Environment variables (gitignored)
-    │   ├── simulate.py                    # Manual simulation script
-    │   ├── reset_issue.py                 # Utility to reset a stuck issue
-    │   ├── test_complete_flow.py          # End-to-end integration test
-    │   ├── test_github.py                 # GitHub API tests
-    │   ├── test_langchain.py              # LangChain agent tests
-    │   ├── test_sandbox.py                # Sandbox runner tests
+    ├── backend/
+    │   ├── main.py                          # FastAPI REST, SSE streams, Webhook & Approval routes
+    │   ├── models.py                        # FeatureSignal, Comment, Upvote, AuditEvent, FixAttempt
+    │   ├── database.py                      # Multi-DB engine (SQLite + Supabase PostgreSQL)
+    │   ├── llm_router.py                    # Multi-provider free failover (Gemini -> Groq -> OpenRouter)
+    │   ├── signal_triage.py                 # Semantic clustering, vagueness reply, upvote engine
+    │   ├── context_engine.py                # py-tree-sitter AST symbol extractor & route mapper
+    │   ├── visual_verifier.py               # Playwright Chromium capture + Gemini Vision Judge
+    │   ├── test_phase5_autoship.py          # Phase 5 verification test suite (9 tests)
+    │   ├── test_complete_flow.py            # End-to-end sandbox execution pipeline test
     │   └── utils/
-    │       ├── agent_orchestrator.py      # Chains all agents together
-    │       ├── code_agent_with_tools.py   # LangChain agent + file R/W tools
-    │       ├── langchain_tools.py         # Custom LangChain tools (read/write file)
-    │       ├── langchain_agent.py         # Simple chain (non-tool version)
-    │       ├── sandbox_runner.py          # Runs npm test in subprocess
-    │       ├── github_manager.py          # PyGitHub: branch, commit, PR
-    │       ├── streaming_callback.py      # LangChain SSE streaming handler
-    │       ├── orchestrator.py            # Alternative orchestrator (legacy)
-    │       ├── initialization.py          # Startup environment checks
-    │       ├── system_checks.py           # Node/npm/project validation
-    │       ├── db_recovery.py             # Reset stuck features in DB
-    │       ├── heartbeat.py               # DB heartbeat updater
-    │       ├── process_manager.py         # Subprocess management helpers
-    │       └── test_config_helper.py      # Test environment bootstrapper
-    │
-    ├── frontend/                          # Next.js 14 TypeScript app
+    │       ├── github_manager.py            # Squash merge, branch deletion, issue closure, preview polling
+    │       ├── sandbox_runner.py            # Ephemeral git worktree runner with Docker & subprocess fallback
+    │       ├── langchain_tools.py           # Surgical replace_in_file with AST rollback
+    │       ├── code_agent_with_tools.py     # Multi-tool LangGraph coding agent
+    │       └── agent_orchestrator.py        # Pipeline coordinator
+    ├── frontend/
     │   ├── app/
-    │   │   ├── page.js                    # Landing page
-    │   │   ├── layout.js                  # Root layout
-    │   │   ├── globals.css                # Global styles
-    │   │   ├── signup/                    # Sign-up page
-    │   │   ├── developer/
-    │   │   │   ├── triage/                # Triage dashboard (feature list)
-    │   │   │   └── build/                 # Plan review & execution view
     │   │   ├── components/
-    │   │   │   └── ui/
-    │   │   │       ├── border-beam.tsx    # Animated border component
-    │   │   │       └── spotlight.tsx      # Spotlight effect component
-    │   │   └── lib/                       # Utility functions
-    │   ├── package.json
-    │   ├── tailwind.config.js
-    │   └── tsconfig.json
-    │
-    └── test-target/                       # Sample project the AI agent fixes
-        ├── src/
-        │   └── checkout.js                # Target file with intentional bugs
-        ├── tests/                         # Jest tests for checkout.js
-        └── package.json
+    │   │   │   ├── TriageDashboard.tsx      # Live signals dashboard (zero mock data)
+    │   │   │   ├── EvidenceReview.tsx       # 4-quadrant review (Where / Why / When / Proof)
+    │   │   │   ├── AssistModePanel.tsx      # Strategy guide & locked auto-merge (< 70)
+    │   │   │   ├── LiveTerminal.tsx         # Real-time SSE execution log terminal
+    │   │   │   └── FeedbackComments.tsx     # Embedded comments widget with "Shipped Live" badge
+    │   │   └── developer/build/[id]/page.tsx# Signal build details + One-Click Approve & Ship Gate
+    │   └── package.json
+    └── test-target/                         # Local target app for sandbox testing
 ```
 
 ---
 
-## 🗄️ Database Schema
+## 🔌 API & Webhook Reference
 
-| Table | Description |
-|---|---|
-| `issue_reports` | Every feature request / bug report submitted via the dashboard |
-| `fix_attempts` | Each attempt by the coding agent (up to 3 retries on test failure) |
-| `pull_requests` | Linked GitHub PR record once tests pass |
-
-**IssueReport Status Flow:**
-```
-pending → planned → approved → processing → completed
-                                          ↘ failed
-```
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-| Requirement | Version |
-|---|---|
-| Python | 3.10+ |
-| Node.js & npm | 18+ |
-| GitHub Account | Personal Access Token with `repo` scope |
-| Google Gemini API Key | [Get one here](https://aistudio.google.com/app/apikey) |
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/comments` | Submit user feedback with route and browser console telemetry |
+| `POST` | `/api/comments/{id}/upvote` | Upvote a comment/signal; triggers build when reaching threshold |
+| `GET` | `/api/comments?route=/...` | Fetch comments for a route with live **"Shipped Live"** status and PR URLs |
+| `GET` | `/api/signals` | List all clustered `FeatureSignal` items (replaces static ticket mocks) |
+| `GET` | `/api/signals/{id}` | Retrieve full signal details (diff, comments, audit events, screenshots) |
+| `GET` | `/api/signals/{id}/stream` | Server-Sent Events (SSE) streaming live agent actions to `LiveTerminal` |
+| `POST` | `/api/signals/{id}/approve` | **One-Click Auto-Ship:** Squash-merges PR, closes GitHub issue, deletes branch |
+| `POST` | `/api/signals/{id}/reject` | Closes PR, deletes branch, and marks signal rejected |
+| `POST` | `/api/signals/{id}/retry` | Accepts edited plan markdown and re-queues agent execution |
+| `POST` | `/api/webhooks/github` | HMAC-SHA256 verified webhook listening for Vercel/GitHub deployment success |
 
 ---
 
-### 1. Clone the Repository
+## ⚡ Quick Start
 
-```bash
-git clone https://github.com/Hanuaditya/evo-code.git
-cd evo-code/evocode-v1
-```
+### 1. Environment Configuration
 
----
-
-### 2. Backend Setup
-
-```bash
-cd backend
-```
-
-**Install Python dependencies:**
-
-```bash
-pip install -r requirements.txt
-```
-
-**Configure environment variables** by creating/editing the `.env` file:
+Create `evocode-v1/backend/.env`:
 
 ```env
-# ── GitHub Integration ──────────────────────────────
-GITHUB_TOKEN=your_github_personal_access_token
-REPO_OWNER=your_github_username
-REPO_NAME=your_target_repo_name
+# Database
+DATABASE_URL=sqlite:///./evocode.db
 
-# ── AI ──────────────────────────────────────────────
+# Target Repository
+REPO_PATH=C:\Users\username\Desktop\evocode-test-target
+GITHUB_TOKEN=ghp_your_github_token_here
+REPO_OWNER=your_github_user
+REPO_NAME=evocode-test-target
+GITHUB_WEBHOOK_SECRET=your_webhook_secret_here
+
+# AI Multi-Provider Free Keys
 GEMINI_API_KEY=your_gemini_api_key
+GEMINI_PRIMARY_MODEL=gemini-3.8-flash
+GROQ_API_KEY=your_groq_api_key
+OPENROUTER_API_KEY=your_openrouter_api_key
 
-# ── Target Configuration ────────────────────────────
-# Relative path of the file the AI agent will modify
-TARGET_FILE_PATH=app/components/About.jsx
-
-# Absolute path to the cloned target repo on disk
-REPO_PATH=C:\path\to\your\target-repo
-
-# ── Sandbox / Test Settings ─────────────────────────
+# Autonomy & Verification Controls
+UPVOTE_THRESHOLD=1
+CONFIDENCE_AUTO_THRESHOLD=70
+EXECUTION_MODE=autonomous_pr
+SANDBOX_BACKEND=auto
 TEST_TIMEOUT=30
-TEST_AUTO_SETUP=true
-SANDBOX_ENABLE_TESTS=true
-SANDBOX_CREATE_MINIMAL_TESTS=true
+MAX_FIX_RETRIES=3
+ENABLE_VISUAL_VERIFIER=true
 ```
 
-> ⚠️ **Never commit your `.env` file.** It is already listed in `.gitignore`.
-
-**Start the backend server:**
+### 2. Start Backend
 
 ```bash
+cd evocode-v1/backend
+pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
-The API will be available at **`http://localhost:8000`**.
-Interactive API docs (Swagger UI) at **`http://localhost:8000/docs`**.
-
----
-
-### 3. Frontend Setup
+### 3. Start Frontend Dashboard
 
 ```bash
-cd ../frontend
+cd evocode-v1/frontend
 npm install
 npm run dev
 ```
-
-The frontend runs on **`http://localhost:3001`** (port 3001 is configured in `package.json`).
+Open **`http://localhost:3000`** (or configured port) to access the live dashboard.
 
 ---
 
-### 4. Test-Target Setup (for the AI Sandbox)
+## 🧪 Verification Tests
 
-The `test-target/` folder is a sample Node.js project the coding agent reads and modifies. It must be set up with its own dependencies for sandbox testing to work:
+Run the full Phase 5 verification test suite:
 
 ```bash
-cd ../test-target
-npm install
+python -m pytest -s evocode-v1/backend/test_phase5_autoship.py
 ```
 
----
-
-## ⚡ Quick Start Checklist
-
-```
-☐  Clone repo & cd into evocode-v1/backend
-☐  pip install -r requirements.txt
-☐  Create .env with GITHUB_TOKEN, REPO_OWNER, REPO_NAME, GEMINI_API_KEY, REPO_PATH
-☐  uvicorn main:app --reload --port 8000
-☐  cd ../frontend && npm install && npm run dev
-☐  cd ../test-target && npm install
-☐  Open http://localhost:3001 🎉
-```
-
----
-
-## 🔌 API Reference
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/` | Health check |
-| `GET` | `/health` | Detailed health status |
-| `POST` | `/api/report` | Submit a new bug/feature request |
-| `GET` | `/api/features` | List all feature requests |
-| `GET` | `/api/features/{id}` | Get full feature details + plan |
-| `POST` | `/api/issues/{id}/plan` | **Step 1:** Generate AI implementation plan |
-| `POST` | `/api/issues/{id}/execute` | **Step 2:** Approve plan & start coding agent |
-| `GET` | `/api/issues/{id}/status` | Poll current status of an issue |
-| `GET` | `/api/features/{id}/execute/stream` | **SSE:** Stream live agent execution logs |
-| `POST` | `/api/features/{id}/reset` | Reset a stuck feature to `failed` |
-| `POST` | `/api/features/{id}/force-stop` | Force-stop a running feature |
-| `GET` | `/api/debug/sandbox-status` | Inspect sandbox environment health |
-
-> Full interactive docs available at `http://localhost:8000/docs` when the server is running.
-
----
-
-## 🧪 Running Tests
-
-**Backend integration tests:**
-
-```bash
-cd backend
-
-python test_complete_flow.py   # End-to-end pipeline test
-python test_github.py          # GitHub API connectivity
-python test_sandbox.py         # Sandbox runner validation
-python test_langchain.py       # LangChain agent smoke test
-```
-
-**Frontend linting:**
-
-```bash
-cd frontend
-npm run lint
-```
-
-**Test-target unit tests (what the sandbox runs against generated code):**
-
-```bash
-cd test-target
-npm test
-```
-
----
-
-## 🛠️ Tech Stack
-
-| Layer | Technology |
-|---|---|
-| **Frontend** | Next.js 14, React 18, TypeScript, Tailwind CSS |
-| **Animations** | Framer Motion (`motion`), `@react-spring/web`, `cobe` |
-| **UI Components** | Radix UI, Lucide React |
-| **Backend** | Python 3.10+, FastAPI, Uvicorn |
-| **AI / LLM** | LangChain, `langchain-google-genai` (Gemini 2.5 Flash) |
-| **Database** | SQLite via SQLAlchemy ORM |
-| **GitHub Automation** | PyGitHub |
-| **Streaming** | `sse-starlette`, Server-Sent Events |
-| **Sandbox** | Node.js subprocess + Jest |
-
----
-
-## 📋 Environment Variables Reference
-
-| Variable | Required | Description |
-|---|---|---|
-| `GITHUB_TOKEN` | ✅ | GitHub Personal Access Token (`repo` scope required) |
-| `REPO_OWNER` | ✅ | GitHub username owning the target repo |
-| `REPO_NAME` | ✅ | Name of the GitHub repo the agent will PR into |
-| `GEMINI_API_KEY` | ✅ | Google Gemini API key |
-| `TARGET_FILE_PATH` | ✅ | Relative path of the file the agent targets |
-| `REPO_PATH` | ✅ | Absolute local path to the cloned target repo |
-| `TEST_TIMEOUT` | ❌ | Sandbox test timeout in seconds (default: `30`) |
-| `TEST_AUTO_SETUP` | ❌ | Auto-install npm deps before testing (default: `true`) |
-| `SANDBOX_ENABLE_TESTS` | ❌ | Whether to run tests before committing (default: `true`) |
-| `SANDBOX_CREATE_MINIMAL_TESTS` | ❌ | Create stub tests if none exist (default: `true`) |
-
----
-
-## 🗺️ Roadmap
-
-- [ ] User authentication (OAuth / magic link)
-- [ ] Multi-repo support from the dashboard
-- [ ] Vote-based feature request aggregation (upvote system)
-- [ ] GitHub Webhook integration (auto-triage on issue creation)
-- [ ] Support for Python and other language test runners
-- [ ] V2 agentic architecture with parallel tool execution
-
----
-
-## 🤝 Contributing
-
-This project is currently in active development as a hackathon prototype. Feel free to open issues or pull requests if you'd like to contribute.
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feat/your-feature`)
-3. Commit your changes (`git commit -m 'feat: add your feature'`)
-4. Push to the branch (`git push origin feat/your-feature`)
-5. Open a Pull Request
-
----
-
-## 📄 License
-
-This project is for demonstration and hackathon purposes.
+Test coverage includes:
+- Confidence score guardrails (auto-merge blocked below 70 without override)
+- High-confidence 1-click **Approve & Ship** execution
+- Pull Request rejection and branch cleanup
+- GitHub Webhook HMAC-SHA256 signature verification & ping handshake
+- Production `deployment_status` success handling
+- Live comment **"Shipped Live"** badge rendering and PR linking
+- `FeedbackComments.tsx` telemetry and upvote handlers
 
 ---
 
 <div align="center">
-  Built with ❤️ by <strong>Hanuaditya</strong>
+  Built with ❤️ for autonomous, zero-cost developer workflows.
 </div>

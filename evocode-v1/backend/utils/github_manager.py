@@ -207,3 +207,96 @@ class GitHubManager:
             msg = f"Unexpected error getting file content: {e}"
             logger.error(msg)
             return self._format_error(msg)
+
+    # -----------------------------------------------------------------------
+    # V2 Operations: Issue Tracking, Preview Polling & One-Click Merge
+    # -----------------------------------------------------------------------
+
+    def create_issue(self, title: str, body: str, labels: Optional[list] = None) -> Dict[str, Any]:
+        """Create a GitHub issue for tracking a feature signal."""
+        try:
+            issue = self.repo.create_issue(
+                title=title,
+                body=body,
+                labels=labels or ["evocode", "autonomous-pr"]
+            )
+            logger.info(f"Created GitHub Issue #{issue.number}: {issue.html_url}")
+            return self._format_success({"issue_number": issue.number, "issue_url": issue.html_url})
+        except Exception as e:
+            logger.error(f"Error creating GitHub issue: {e}")
+            return self._format_error(str(e))
+
+    def poll_vercel_preview_url(self, branch_name: str, max_wait_seconds: int = 60, poll_interval: int = 5) -> Optional[str]:
+        """
+        Polls the GitHub Deployments API for up to max_wait_seconds
+        to capture the Vercel Preview URL associated with branch_name.
+        """
+        import time
+        logger.info(f"Polling Vercel Preview URL for branch '{branch_name}' (up to {max_wait_seconds}s)...")
+        start_time = time.time()
+
+        while time.time() - start_time < max_wait_seconds:
+            try:
+                deployments = self.repo.get_deployments(ref=branch_name)
+                for dep in deployments:
+                    statuses = dep.get_statuses()
+                    for status in statuses:
+                        if status.environment_url:
+                            logger.info(f"Captured Vercel Preview URL: {status.environment_url}")
+                            return status.environment_url
+            except Exception as e:
+                logger.warning(f"Error querying deployments for '{branch_name}': {e}")
+
+            time.sleep(poll_interval)
+
+        logger.info(f"Vercel Preview URL not detected within {max_wait_seconds}s for branch '{branch_name}'")
+        return None
+
+    def merge_pull_request(self, pr_number: int, commit_title: Optional[str] = None, merge_method: str = "squash") -> Dict[str, Any]:
+        """Squash-merges the given PR."""
+        try:
+            pr = self.repo.get_pull(pr_number)
+            res = pr.merge(
+                commit_title=commit_title or f"Squash merge PR #{pr_number} by EvoCode",
+                merge_method=merge_method
+            )
+            logger.info(f"PR #{pr_number} merged successfully (SHA: {res.sha})")
+            return self._format_success({"merged": res.merged, "sha": res.sha})
+        except Exception as e:
+            logger.error(f"Error merging PR #{pr_number}: {e}")
+            return self._format_error(str(e))
+
+    def close_pull_request(self, pr_number: int) -> Dict[str, Any]:
+        """Closes a PR without merging."""
+        try:
+            pr = self.repo.get_pull(pr_number)
+            pr.edit(state="closed")
+            logger.info(f"PR #{pr_number} closed.")
+            return self._format_success({"closed": True})
+        except Exception as e:
+            logger.error(f"Error closing PR #{pr_number}: {e}")
+            return self._format_error(str(e))
+
+    def delete_branch(self, branch_name: str) -> Dict[str, Any]:
+        """Deletes a remote feature branch."""
+        try:
+            ref = self.repo.get_git_ref(f"heads/{branch_name}")
+            ref.delete()
+            logger.info(f"Remote branch '{branch_name}' deleted successfully.")
+            return self._format_success({"deleted": True, "branch": branch_name})
+        except Exception as e:
+            logger.error(f"Error deleting remote branch '{branch_name}': {e}")
+            return self._format_error(str(e))
+
+    def close_issue(self, issue_number: int, comment: Optional[str] = None) -> Dict[str, Any]:
+        """Closes a GitHub issue with an optional comment (e.g., Closes #X on auto-ship)."""
+        try:
+            issue = self.repo.get_issue(issue_number)
+            if comment:
+                issue.create_comment(comment)
+            issue.edit(state="closed")
+            logger.info(f"GitHub Issue #{issue_number} closed.")
+            return self._format_success({"closed": True, "issue_number": issue_number})
+        except Exception as e:
+            logger.error(f"Error closing GitHub issue #{issue_number}: {e}")
+            return self._format_error(str(e))

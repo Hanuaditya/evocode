@@ -18,6 +18,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.prebuilt import create_react_agent
 
+from llm_router import get_coding_llm
 from utils.streaming_callback import StreamingCallbackHandler
 from utils.langchain_tools import ALL_TOOLS  # read_file, write_file, list_directory
 
@@ -78,23 +79,7 @@ class CodeAgentWithTools:
     MAX_EXECUTION_TIME = 45  # Wall-clock seconds before thread is abandoned
 
     def __init__(self) -> None:
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY is missing from environment / .env")
-
-        self.model = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            google_api_key=api_key,
-            temperature=0.0,           # Low temp = deterministic JSON for tool calls
-            max_output_tokens=8192,
-            convert_system_message_to_human=True,
-            safety_settings={
-                "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
-                "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
-                "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
-                "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
-            },
-        )
+        self.model = get_coding_llm(temperature=0.0)
 
         # Build the LangGraph react agent (replaces AgentExecutor)
         self._agent = create_react_agent(
@@ -104,7 +89,7 @@ class CodeAgentWithTools:
         )
 
         logger.info(
-            "[CodeAgentWithTools] Initialized with gemini-2.5-flash + langgraph "
+            f"[CodeAgentWithTools] Initialized with {getattr(self.model, 'model', 'llm')} + langgraph "
             f"(max_iterations={self.MAX_ITERATIONS}, timeout={self.MAX_EXECUTION_TIME}s)"
         )
 

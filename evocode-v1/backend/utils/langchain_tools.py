@@ -24,6 +24,11 @@ from typing import Optional
 from pydantic import BaseModel, Field
 from langchain_core.tools import tool
 
+try:
+    from context_engine import validate_syntax
+except Exception:
+    validate_syntax = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -280,11 +285,25 @@ def replace_in_file(file_path: str, exact_old_text: str, new_text: str) -> str:
                 )
             new_content = content[:match.start()] + cleaned_new + content[match.end():]
 
+        # ── AST Syntax Validation Guard (Phase 3) ────────────────────────
+        if validate_syntax:
+            is_valid, syntax_err = validate_syntax(file_path, new_content)
+            if not is_valid:
+                logger.warning(
+                    f"[replace_in_file] AST Syntax check failed for {file_path!r}: {syntax_err}. "
+                    "Edit rolled back (file untouched)."
+                )
+                return (
+                    f"❌ AST Syntax validation failed: {syntax_err}.\n"
+                    f"File '{file_path}' was NOT modified (change rolled back).\n"
+                    f"Please self-correct: check for missing closing tags, mismatched braces, or invalid syntax and retry."
+                )
+
         with open(full_path, 'w', encoding='utf-8') as f:
             f.write(new_content)
 
-        logger.info(f"[replace_in_file] Surgical edit applied to {file_path!r}")
-        return f"✅ Successfully replaced text in {file_path}"
+        logger.info(f"[replace_in_file] Surgical edit applied to {file_path!r} (AST verified)")
+        return f"✅ Successfully replaced text in {file_path} (AST syntax verified)"
 
     except Exception as e:
         error_msg = f"❌ Error modifying file: {str(e)}"

@@ -1,177 +1,313 @@
+"""
+backend/utils/sandbox_runner.py
+
+Hybrid Execution Sandbox for EvoCode V2.
+
+Features:
+- Ephemeral Git Worktree isolation per job (signal_id):
+    git worktree add ../evocode-worktrees/signal-{id} -b evocode/signal-{id}-{timestamp}
+- Execution Mode (SANDBOX_BACKEND=auto):
+    - Docker: mounts worktree into node:20-alpine (--network=none, 1GB RAM, 1 CPU, 30s timeout)
+    - Subprocess: falls back cleanly to isolated subprocess with CI=true, NODE_ENV=test
+- Guaranteed teardown:
+    - Context manager ensures `git worktree remove --force` in a finally block
+    - Pushes branch on verified success or cleans up on failure
+- Backward-compatible with V1 SandboxRunner methods.
+"""
+
 import os
 import json
 import logging
 import subprocess
 import platform
 import re
+import time
+import shutil
 from typing import Dict, Any, Optional
+from contextlib import contextmanager
 
 try:
     from config import settings
 except Exception:
-    settings = None  # Fallback: settings not yet initialized (e.g., during early import)
+    settings = None
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("sandbox_runner")
+
 
 class SandboxRunner:
     """
-    Utility class for executing and verifying code against an external test suite 
-    via Python's subprocessing capabilities, running safely inside a sandbox.
+    Utility class for executing and verifying code inside an isolated
+    ephemeral git worktree, running tests via Docker or local subprocess.
     """
 
     def __init__(self, project_root_path: str):
-        """
-        Constructor configuring the test execution sandbox path.
+        self.project_root_path = os.path.abspath(project_root_path)
+        self.active_worktree_path: Optional[str] = None
+        self.active_branch_name: Optional[str] = None
+        if not os.path.exists(self.project_root_path):
+            logger.warning(f"Project root path does not exist: {self.project_root_path}")
+        logger.info(f"SandboxRunner initialized for path: {self.project_root_path}")
 
-        Args:
-            project_root_path (str): The root folder of the project containing test configuration.
+    # -----------------------------------------------------------------------
+    # Ephemeral Git Worktree Management
+    # -----------------------------------------------------------------------
+
+    def create_worktree(self, signal_id: int) -> Dict[str, str]:
         """
-        self.project_root_path = project_root_path
-        if not os.path.exists(project_root_path):
-            logger.warning(f"Project root path does not exist: {project_root_path}")
-        logger.info(f"SandboxRunner initialized for path: {project_root_path}")
+        Creates an isolated git worktree for the given signal_id:
+          Directory: ../evocode-worktrees/signal-{id}
+          Branch:    evocode/signal-{id}-{timestamp}
+        """
+        # Ensure base worktrees directory exists
+        base_worktrees_dir = os.path.abspath(os.path.join(self.project_root_path, "..", "evocode-worktrees"))
+        os.makedirs(base_worktrees_dir, exist_ok=True)
+
+        worktree_path = os.path.join(base_worktrees_dir, f"signal-{signal_id}")
+        timestamp = int(time.time())
+        branch_name = f"evocode/signal-{signal_id}-{timestamp}"
+
+        # If worktree directory already exists from an aborted run, force remove it
+        if os.path.exists(worktree_path):
+            logger.warning(f"[sandbox_runner] Cleaning stale worktree at {worktree_path}")
+            self._force_cleanup_directory(worktree_path)
+
+        cmd = ["git", "worktree", "add", worktree_path, "-b", branch_name]
+        logger.info(f"[sandbox_runner] Creating worktree for signal #{signal_id} on branch {branch_name}")
+
+        try:
+            res = subprocess.run(
+                cmd,
+                cwd=self.project_root_path,
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            if res.returncode != 0:
+                # If branch already exists, try checkout without -b
+                if "already exists" in res.stderr:
+                    cmd_alt = ["git", "worktree", "add", worktree_path, branch_name]
+                    res = subprocess.run(cmd_alt, cwd=self.project_root_path, capture_output=True, text=True, check=False)
+
+            if res.returncode != 0:
+                logger.error(f"[sandbox_runner] Failed to create worktree: {res.stderr}")
+                raise RuntimeError(f"Failed to create git worktree: {res.stderr.strip()}")
+
+            self.active_worktree_path = os.path.abspath(worktree_path)
+            self.active_branch_name = branch_name
+            logger.info(f"[sandbox_runner] Worktree successfully created at {worktree_path}")
+
+            return {
+                "worktree_path": self.active_worktree_path,
+                "branch_name": self.active_branch_name,
+            }
+
+        except Exception as e:
+            logger.error(f"[sandbox_runner] Error in create_worktree: {e}")
+            raise
+
+    def cleanup_worktree(self, delete_branch: bool = False) -> None:
+        """
+        Cleans up the active git worktree using `git worktree remove --force`.
+        Guaranteed to leave zero leftover worktree folders.
+        """
+        if not self.active_worktree_path:
+            return
+
+        worktree_path = self.active_worktree_path
+        branch_name = self.active_branch_name
+
+        try:
+            logger.info(f"[sandbox_runner] Removing worktree at {worktree_path}")
+            # Step 1: git worktree remove --force
+            res = subprocess.run(
+                ["git", "worktree", "remove", "--force", worktree_path],
+                cwd=self.project_root_path,
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            if res.returncode != 0:
+                logger.warning(f"[sandbox_runner] git worktree remove returned: {res.stderr.strip()}")
+
+            # Step 2: Ensure filesystem directory is completely gone
+            if os.path.exists(worktree_path):
+                self._force_cleanup_directory(worktree_path)
+
+            # Step 3: Prune worktrees in git metadata
+            subprocess.run(
+                ["git", "worktree", "prune"],
+                cwd=self.project_root_path,
+                capture_output=True,
+                text=True,
+                check=False
+            )
+
+            # Step 4: If branch should be discarded (e.g. failed attempt)
+            if delete_branch and branch_name:
+                subprocess.run(
+                    ["git", "branch", "-D", branch_name],
+                    cwd=self.project_root_path,
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+
+        except Exception as e:
+            logger.error(f"[sandbox_runner] Error cleaning up worktree: {e}")
+        finally:
+            self.active_worktree_path = None
+            self.active_branch_name = None
+
+    def _force_cleanup_directory(self, dir_path: str) -> None:
+        """Helper to forcefully delete a directory on Windows or Linux."""
+        try:
+            if platform.system() == "Windows":
+                # Reset read-only attributes that git may have placed
+                subprocess.run(["attrib", "-R", f"{dir_path}\\*.*", "/S", "/D"], capture_output=True, check=False)
+            shutil.rmtree(dir_path, ignore_errors=True)
+        except Exception as e:
+            logger.warning(f"[sandbox_runner] Directory force cleanup notice: {e}")
+
+    @contextmanager
+    def isolated_sandbox(self, signal_id: int, delete_on_failure: bool = False):
+        """
+        Context manager that creates an ephemeral worktree for signal_id,
+        yields execution control, and guarantees worktree cleanup in a finally block.
+        """
+        created = False
+        try:
+            info = self.create_worktree(signal_id)
+            created = True
+            yield info
+        finally:
+            if created:
+                self.cleanup_worktree(delete_branch=delete_on_failure)
+
+    # -----------------------------------------------------------------------
+    # Docker Availability & Test Execution
+    # -----------------------------------------------------------------------
+
+    def is_docker_available(self) -> bool:
+        """Returns True if the Docker daemon is accessible and responding."""
+        try:
+            res = subprocess.run(
+                ["docker", "info"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False
+            )
+            return res.returncode == 0
+        except Exception:
+            return False
 
     def write_code_to_file(self, file_path: str, code_content: str) -> Dict[str, Any]:
-        """
-        Safely writes code to a file within the project root.
-
-        Args:
-            file_path (str): The relative or absolute path to the file.
-            code_content (str): The new string content to be written.
-
-        Returns:
-            Dict[str, Any]: Structured dictionary with success status, message, and bytes_written.
-        """
+        """Safely writes code to a file within the current worktree (or project root)."""
+        target_root = self.active_worktree_path or self.project_root_path
         try:
-            # 1. Construct full_path = os.path.join(self.project_root_path, file_path)
-            full_path = os.path.join(self.project_root_path, file_path)
-            
-            # 2. Validate file_path doesn't escape project root (security check)
-            abs_project = os.path.abspath(self.project_root_path)
+            full_path = os.path.join(target_root, file_path)
+            abs_root = os.path.abspath(target_root)
             abs_target = os.path.abspath(full_path)
-            if not abs_target.startswith(abs_project):
-                return {"success": False, "error": f"Security violation: path {full_path} escapes project root"}
+            if not abs_target.startswith(abs_root):
+                return {"success": False, "error": f"Security violation: path {full_path} escapes target root"}
 
-            # 3. Create parent directories if they don't exist
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
-
-            # 4. Write content to file with UTF-8 encoding
             with open(full_path, "w", encoding="utf-8") as f:
                 f.write(code_content)
-            
-            # 5. Log success with file size
-            bytes_written = len(code_content.encode('utf-8'))
-            logger.info(f"Successfully wrote {bytes_written} bytes to {full_path}")
-            
-            # 6. Return success
+
+            bytes_written = len(code_content.encode("utf-8"))
             return {"success": True, "message": f"Successfully wrote to {file_path}", "bytes_written": bytes_written}
-            
         except Exception as e:
-            # 7. On error, return structured error
             logger.error(f"Error writing to file '{file_path}': {e}")
             return {"success": False, "error": str(e)}
 
-    def check_test_configuration(self) -> Dict[str, Any]:
-        """
-        Checks if the project has tests configured in package.json.
-
-        Returns:
-            Dict[str, Any]: Dictionary containing has_tests boolean and test_command or reason.
-        """
+    def check_test_configuration(self, root_path: Optional[str] = None) -> Dict[str, Any]:
+        """Checks if package.json has a valid test script."""
+        target_root = root_path or self.active_worktree_path or self.project_root_path
         try:
-            # 1. Look for package.json in project_root_path
-            pkg_path = os.path.join(self.project_root_path, "package.json")
-            
-            # 2. If not found, return reason
+            pkg_path = os.path.join(target_root, "package.json")
             if not os.path.exists(pkg_path):
                 return {"has_tests": False, "reason": "No package.json"}
-                
-            # 3. Parse package.json as JSON
+
             with open(pkg_path, "r", encoding="utf-8") as f:
                 pkg_data = json.load(f)
-                
-            # 4. Check if "scripts" section exists
-            if "scripts" not in pkg_data:
-                return {"has_tests": False, "reason": "No scripts section in package.json"}
-                
-            # 5. Check if "test" script exists in scripts
-            if "test" not in pkg_data["scripts"]:
+
+            if "scripts" not in pkg_data or "test" not in pkg_data["scripts"]:
                 return {"has_tests": False, "reason": "No test script in package.json"}
-                
+
             test_script = pkg_data["scripts"]["test"]
-            
-            # 6. Check if test script is placeholder
-            if 'Error: no test specified' in test_script or 'echo "No tests specified"' in test_script:
+            if "Error: no test specified" in test_script or 'echo "No tests specified"' in test_script:
                 return {"has_tests": False, "reason": "Default npm test placeholder"}
-                
-            # 7. Return true with command
+
             return {"has_tests": True, "test_command": test_script}
-            
         except Exception as e:
-            logger.error(f"Error checking test config: {e}")
             return {"has_tests": False, "reason": str(e)}
 
-    def run_tests(self) -> Dict[str, Any]:
+    def run_tests(self, execution_dir: Optional[str] = None) -> Dict[str, Any]:
         """
-        Executes tests with timeout protection and environment isolation.
-        Reads TEST_TIMEOUT, TEST_SKIP_IF_MISSING, and SANDBOX_CREATE_MINIMAL_TESTS from settings.
-
-        Returns:
-            Dict[str, Any]: Structured dictionary with passed boolean, output, and error.
+        Executes tests using Docker if available and configured,
+        or isolated local subprocess fallback.
         """
-        # Read settings with safe fallbacks
+        target_dir = execution_dir or self.active_worktree_path or self.project_root_path
         timeout = getattr(settings, "TEST_TIMEOUT", 30) if settings else 30
-        skip_if_missing = getattr(settings, "TEST_SKIP_IF_MISSING", False) if settings else False
-        auto_create = getattr(settings, "SANDBOX_CREATE_MINIMAL_TESTS", True) if settings else True
+        backend_mode = os.getenv("SANDBOX_BACKEND", "auto").lower()
+
+        logger.info(f"🧪 Running tests in sandbox ({target_dir}) [backend: {backend_mode}]...")
+
+        # Check test config
+        config = self.check_test_configuration(target_dir)
+        if not config.get("has_tests"):
+            auto_create = getattr(settings, "SANDBOX_CREATE_MINIMAL_TESTS", True) if settings else True
+            if auto_create:
+                try:
+                    from utils.test_config_helper import create_minimal_test_suite
+                    create_minimal_test_suite(target_dir)
+                    config = self.check_test_configuration(target_dir)
+                except Exception as e:
+                    logger.warning(f"Could not auto-create tests: {e}")
+
+            if not config.get("has_tests"):
+                return {"passed": True, "output": "No tests configured - skipping", "error": None, "skipped": True}
+
+        # ── Mode 1: Docker execution (if available) ────────────────────────
+        if backend_mode in ("auto", "docker") and self.is_docker_available():
+            logger.info("[sandbox_runner] Using Docker node:20-alpine container...")
+            docker_cmd = [
+                "docker", "run", "--rm",
+                "--network=none",
+                "--memory=1g",
+                "--cpus=1",
+                "-v", f"{target_dir}:/app",
+                "-w", "/app",
+                "node:20-alpine",
+                "npm", "test"
+            ]
+            try:
+                proc = subprocess.run(
+                    docker_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    check=False
+                )
+                return self.parse_test_output(proc.stdout, proc.stderr, proc.returncode)
+            except subprocess.TimeoutExpired:
+                return {"passed": False, "output": "", "error": f"Docker test execution timed out ({timeout}s)", "return_code": -1}
+            except Exception as e:
+                logger.warning(f"[sandbox_runner] Docker execution failed ({e}), falling back to subprocess...")
+
+        # ── Mode 2: Isolated Subprocess execution ──────────────────────────
+        logger.info("[sandbox_runner] Running via isolated local subprocess...")
+        npm_cmd = "npm.cmd" if platform.system() == "Windows" else "npm"
+        env = os.environ.copy()
+        env["CI"] = "true"
+        env["NODE_ENV"] = "test"
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
 
         try:
-            # 1. Log running tests
-            logger.info("🧪 Running tests in sandbox...")
-            
-            # 2. Call check_test_configuration
-            config = self.check_test_configuration()
-            
-            # 3. If has_tests is False
-            if not config.get("has_tests"):
-                reason = config.get("reason", "Unknown")
-                logger.warning(f"No tests configured: {reason}")
-
-                # Auto-create minimal test suite if enabled
-                if auto_create:
-                    logger.info("SANDBOX_CREATE_MINIMAL_TESTS=true — attempting auto-setup...")
-                    try:
-                        from utils.test_config_helper import create_minimal_test_suite
-                        created = create_minimal_test_suite(self.project_root_path)
-                        if created:
-                            logger.info("✅ Minimal test suite created. Re-checking configuration...")
-                            config = self.check_test_configuration()
-                        else:
-                            logger.warning("Auto-setup failed, falling through to skip/fail logic.")
-                    except Exception as setup_err:
-                        logger.error(f"Auto-setup error: {setup_err}")
-
-                # Re-check after potential auto-setup
-                if not config.get("has_tests"):
-                    if skip_if_missing:
-                        return {"passed": True, "output": f"No tests configured - skipping ({reason})", "error": None, "skipped": True}
-                    else:
-                        return {"passed": True, "output": f"No tests configured - skipping ({reason})", "error": None, "skipped": True}
-                
-            # 4. Determine npm command
-            npm_cmd = "npm.cmd" if platform.system() == "Windows" else "npm"
-            
-            # 5. Set up environment variables
-            env = os.environ.copy()
-            env["CI"] = "true"
-            env["NODE_ENV"] = "test"
-            
-            # 6. Execute with Popen to handle Windows grandchild process hangs
-            import signal
-            creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
-            
             process = subprocess.Popen(
                 [npm_cmd, "test"],
-                cwd=self.project_root_path,
+                cwd=target_dir,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -179,83 +315,36 @@ class SandboxRunner:
                 env=env,
                 creationflags=creationflags
             )
-            
             try:
                 stdout, stderr = process.communicate(timeout=timeout)
                 return self.parse_test_output(stdout, stderr, process.returncode)
             except subprocess.TimeoutExpired:
-                # Kill the entire process tree to prevent hanging pipes
                 if platform.system() == "Windows":
                     subprocess.call(["taskkill", "/F", "/T", "/PID", str(process.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 else:
                     process.kill()
-                
-                try:
-                    stdout, stderr = process.communicate(timeout=2)
-                except subprocess.TimeoutExpired:
-                    stdout, stderr = "", "Process failed to terminate cleanly."
-                
-                logger.error(f"Test execution timed out after {timeout} seconds")
-                return {"passed": False, "output": stdout or "", "error": f"Execution timed out ({timeout}s limit)", "return_code": -1}
+                return {"passed": False, "output": "", "error": f"Execution timed out ({timeout}s limit)", "return_code": -1}
 
-            
-        except FileNotFoundError:
-            logger.error("npm command not found")
-            return {"passed": False, "output": "", "error": "npm command not found. Node.js might not be installed.", "return_code": -1}
         except Exception as e:
-            logger.error(f"Error running tests: {e}")
+            logger.error(f"Error running tests via subprocess: {e}")
             return {"passed": False, "output": "", "error": str(e), "return_code": -1}
 
     def parse_test_output(self, stdout: str, stderr: str, return_code: int) -> Dict[str, Any]:
-        """
-        Parses test results from subprocess output.
-
-        Args:
-            stdout (str): Standard Output stream content.
-            stderr (str): Standard Error stream content.
-            return_code (int): The final exit code.
-
-        Returns:
-            Dict[str, Any]: Structured dictionary with passed boolean and parsed output.
-        """
-        # 1. If return_code == 0
+        """Parses test results from stdout/stderr."""
         if return_code == 0:
             test_count = 0
             match = re.search(r'(\d+)\s+(?:passing|tests passed)', stdout, re.IGNORECASE)
             if match:
                 test_count = int(match.group(1))
             return {"passed": True, "output": stdout, "error": None, "test_count": test_count}
-            
-        # 2. If return_code != 0
         return {"passed": False, "output": stdout, "error": stderr, "return_code": return_code}
 
     def execute_and_verify(self, file_path: str, code_content: str) -> Dict[str, Any]:
-        """
-        Main orchestration method that combines writing code and running tests.
-
-        Args:
-            file_path (str): Specific file to overwrite with candidate fix.
-            code_content (str): The code content to apply.
-
-        Returns:
-            Dict[str, Any]: Structured dictionary with test results.
-        """
+        """Backward-compatible helper that writes code and runs tests."""
         try:
-            # 1. Log writing code
-            logger.info(f"📝 Writing code to {file_path}...")
-            
-            # 2. Call write_code_to_file
             write_res = self.write_code_to_file(file_path, code_content)
-            
-            # 3. If write failed, return immediately with error
             if not write_res.get("success"):
                 return {"passed": False, "output": "", "error": write_res.get("error")}
-                
-            # 4. Log success
-            logger.info("✅ Code written successfully")
-            
-            # 5. Call run_tests
-            # 6. Return test results
             return self.run_tests()
         except Exception as e:
             return {"passed": False, "output": "", "error": str(e)}

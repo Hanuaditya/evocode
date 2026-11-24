@@ -1,7 +1,8 @@
 node_modules
 .next
 out
-build
+/build
+!app/developer/build
 .env*.local
 .vercel
 *.tsbuildinfo
