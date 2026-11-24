@@ -19,7 +19,7 @@ import os
 import re
 import fnmatch
 import logging
-from typing import Optional
+from typing import Optional, Any
 
 from pydantic import BaseModel, Field
 from langchain_core.tools import tool
@@ -243,8 +243,12 @@ def list_directory(dirpath: str = ".") -> str:
         return error_msg
 
 
-def _clean_llm_markdown(text: str) -> str:
+def _clean_llm_markdown(text: Any) -> str:
     """Strips accidental markdown code-fence wrappers that the LLM may emit."""
+    if isinstance(text, list):
+        text = "".join([p.get("text", "") if isinstance(p, dict) else str(p) for p in text])
+    elif not isinstance(text, str):
+        text = str(text)
     text = re.sub(r'^```[a-zA-Z]*\n', '', text)
     text = re.sub(r'\n```$', '', text)
     return text.strip()

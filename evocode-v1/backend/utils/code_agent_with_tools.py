@@ -152,9 +152,11 @@ DO NOT regenerate entire files. Only replace what needs changing.
 
                 final_output = ""
                 if "messages" in result and result["messages"]:
-                    final_output = result["messages"][-1].content
-                    if not final_output:
-                        final_output = str(result["messages"][-1])
+                    raw_content = result["messages"][-1].content
+                    if isinstance(raw_content, list):
+                        final_output = "".join([p.get("text", "") if isinstance(p, dict) else str(p) for p in raw_content])
+                    else:
+                        final_output = str(raw_content) if raw_content else str(result["messages"][-1])
 
                 logger.info(
                     f"[CodeAgentWithTools] fix_with_context complete. "
@@ -203,14 +205,15 @@ DO NOT regenerate entire files. Only replace what needs changing.
         # ── Attempt 1: ReAct agent with tools ────────────────────────────
         try:
             result = self.fix_with_context(bug_description, target_file_path, build_plan)
+            out_str = str(result.get("output", ""))
 
-            if result.get("success") and "Successfully wrote" in result.get("output", ""):
+            if result.get("success") and any(phrase in out_str for phrase in ["Successfully wrote", "Successfully replaced", "✅"]):
                 logger.info("[CodeAgentWithTools] ✅ Tool-based fix succeeded")
-                return {"success": True, "method": "tools", "output": result["output"], "error": None}
+                return {"success": True, "method": "tools", "output": out_str, "error": None}
 
             logger.warning(
-                "[CodeAgentWithTools] ⚠️ Agent ran but write_file was not called. "
-                f"Output: {result.get('output', '')[:200]}"
+                "[CodeAgentWithTools] ⚠️ Agent ran but write_file / replace_in_file was not confirmed. "
+                f"Output: {out_str[:200]}"
             )
         except Exception as exc:
             logger.warning(f"[CodeAgentWithTools] ⚠️ Tool-based fix raised: {exc}")
@@ -239,7 +242,10 @@ DO NOT regenerate entire files. Only replace what needs changing.
 
             # Call LLM without tools — plain generation using self.model
             response = self.model.invoke([HumanMessage(content=direct_prompt)])
-            raw_output = response.content
+            if isinstance(response.content, list):
+                raw_output = "".join([p.get("text", "") if isinstance(p, dict) else str(p) for p in response.content])
+            else:
+                raw_output = str(response.content)
 
             # Extract the code block from the response
             import re
@@ -248,7 +254,7 @@ DO NOT regenerate entire files. Only replace what needs changing.
                 # No fenced block — treat the whole response as code
                 new_content = raw_output.strip()
             else:
-                new_content = code_match.group(1)
+                new_content = code_match.group(1).strip()
 
             if not new_content.strip():
                 return {
@@ -313,7 +319,13 @@ DO NOT regenerate entire files. Only replace what needs changing.
                     if isinstance(output_val, dict):
                         msgs = output_val.get("messages", [])
                         if msgs:
-                            final_output = msgs[-1].content
+                            raw_c = msgs[-1].content
+                            if isinstance(raw_c, list):
+                                final_output = "".join([p.get("text", "") if isinstance(p, dict) else str(p) for p in raw_c])
+                            else:
+                                final_output = str(raw_c)
+                    elif isinstance(output_val, list):
+                        final_output = "".join([p.get("text", "") if isinstance(p, dict) else str(p) for p in output_val])
                     elif isinstance(output_val, str):
                         final_output = output_val
 
