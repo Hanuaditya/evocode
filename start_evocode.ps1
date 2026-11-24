@@ -8,9 +8,9 @@ $portsToKill = @(8000, 3001, 3000)
 foreach ($port in $portsToKill) {
     $proc = netstat -ano | findstr ":$port " | Select-String "LISTENING"
     if ($proc) {
-        $pid = ($proc -split '\s+')[-1]
-        Write-Host "Killing process $pid on port $port" -ForegroundColor Yellow
-        taskkill /F /PID $pid 2>$null
+        $procId = ($proc -split '\s+')[-1]
+        Write-Host "Killing process $procId on port $port" -ForegroundColor Yellow
+        taskkill /F /PID $procId 2>$null
         Start-Sleep -Milliseconds 400
     }
 }
@@ -41,5 +41,5 @@ Write-Host "`n=== EvoCode V2 Suite Active ===" -ForegroundColor Cyan
 Write-Host "Target App (User Feedback Widget): http://localhost:3000" -ForegroundColor White
 Write-Host "EvoCode Dashboard (Triage / Build): http://localhost:3001/developer/triage" -ForegroundColor White
 Write-Host "EvoCode Backend API:                http://localhost:8000" -ForegroundColor White
-Write-Host "`nPress any key to exit this launcher window..." -ForegroundColor Gray
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+Write-Host "`nReady for demo! Close windows to stop servers." -ForegroundColor Gray
+try { $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") } catch {}
