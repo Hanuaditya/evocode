@@ -168,7 +168,7 @@ export default function IssueDetailPage({ params }: { params: { id: string } }) 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           bug_text: signal?.canonical_summary ?? displayDesc,
-          file_path: "app/components/About.jsx", // default; can be overridden by signal context
+          file_path: "app/page.js", // Master layout file controlling global dark mode state
         }),
       });
       if (!reportRes.ok) throw new Error("Failed to create issue on backend");
