@@ -142,15 +142,49 @@ def health_check():
     """Standard generic health check returning 200 OK."""
     return {"status": "ok"}
 
+def resolve_dynamic_target_file(bug_text: str, default_path: str = "") -> str:
+    """
+    Dynamically maps a feature request or bug report to the exact target file
+    in the target repository based on content keywords and file structure.
+    """
+    text_lower = bug_text.lower()
+    
+    # Direct keyword mapping for high accuracy
+    if any(k in text_lower for k in ["navbar", "nav bar", "navigation", "menu link"]):
+        return "app/components/Navbar.jsx"
+    if any(k in text_lower for k in ["about", "bio", "education", "experience", "skill"]):
+        return "app/components/About.jsx"
+    if any(k in text_lower for k in ["header", "hero", "greeting", "intro text"]):
+        return "app/components/Header.jsx"
+    if any(k in text_lower for k in ["service", "services", "offering"]):
+        return "app/components/Services.jsx"
+    if any(k in text_lower for k in ["work", "project", "portfolio", "case study"]):
+        return "app/components/Work.jsx"
+    if any(k in text_lower for k in ["contact", "email", "form", "reach out", "send message"]):
+        return "app/components/Contact.jsx"
+    if any(k in text_lower for k in ["footer", "copyright", "social link"]):
+        return "app/components/Footer.jsx"
+    if any(k in text_lower for k in ["dark mode", "theme", "dark theme", "light mode"]):
+        return "app/page.js"
+    if any(k in text_lower for k in ["layout", "metadata", "favicon", "font"]):
+        return "app/layout.js"
+        
+    if default_path and default_path.strip():
+        return default_path.strip()
+        
+    return "app/page.js"
+
+
 @app.post("/api/report")
 def submit_bug_report(report: BugReportRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """
     Accepts a BugReportRequest payload, saves it to the SQLite IssueReport table,
     triggers the background orchestrator, and immediately returns the tracked issue reference.
     """
+    resolved_file = resolve_dynamic_target_file(report.bug_text, report.file_path)
     db_issue = IssueReport(
         bug_text=report.bug_text,
-        file_path=report.file_path,
+        file_path=resolved_file,
         status="pending"   # Sit in DB — do NOT auto-execute. Developer reviews first.
     )
     
@@ -158,7 +192,7 @@ def submit_bug_report(report: BugReportRequest, background_tasks: BackgroundTask
     db.commit()
     db.refresh(db_issue)
     
-    return {"issue_id": db_issue.id, "status": "pending"}
+    return {"issue_id": db_issue.id, "file_path": resolved_file, "status": "pending"}
 
 @app.get("/api/issues/{issue_id}/status")
 def get_issue_status(issue_id: int, db: Session = Depends(get_db)):

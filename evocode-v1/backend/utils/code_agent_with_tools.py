@@ -104,16 +104,18 @@ class CodeAgentWithTools:
         build_plan: Optional[str] = None,
     ) -> str:
         plan_section = f"Plan: {build_plan}" if build_plan else ""
-        return f"""Fix this bug: {bug_description}
+        return f"""Fix this task: {bug_description}
 
-File: {target_file_path}
+Primary Target File: {target_file_path}
 {plan_section}
 
 INSTRUCTIONS:
-1. Read the file with read_file
-2. Find the EXACT text to replace
-3. Use replace_in_file with exact old/new text
-4. Be precise - match exact whitespace and formatting
+1. Read the primary target file with read_file.
+2. Read related files if needed (e.g. components, layout, config).
+3. Find the EXACT text to replace.
+4. Use replace_in_file with exact old/new text.
+5. If related files also need corresponding adjustments (like props, button handlers, or imports), use replace_in_file on them too.
+6. Be precise - match exact whitespace and formatting.
 
 Tools available:
 - read_file(path)

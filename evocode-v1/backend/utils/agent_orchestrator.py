@@ -105,10 +105,23 @@ class AgentOrchestrator:
         issue.status = "processing"
         self.db.commit()
 
-        # ── 2. Backup target file ────────────────────────────────────────
+        # ── 2. Backup target file & related repo files ──────────────────
         self._update_step(issue, "analyzing")
-        backups = self._backup_files([issue.file_path])
-        if issue.file_path not in backups:
+        files_to_backup = [issue.file_path] if issue.file_path else []
+        try:
+            app_dir = os.path.join(self.repo_path, "app")
+            if os.path.exists(app_dir):
+                for root, _, files in os.walk(app_dir):
+                    for f in files:
+                        if f.endswith((".js", ".jsx", ".ts", ".tsx")):
+                            rel = os.path.relpath(os.path.join(root, f), self.repo_path).replace("\\", "/")
+                            if rel not in files_to_backup:
+                                files_to_backup.append(rel)
+        except Exception as exc:
+            logger.warning(f"[AgentOrchestrator] Error scanning source files for backup: {exc}")
+
+        backups = self._backup_files(files_to_backup)
+        if issue.file_path and issue.file_path not in backups:
             return self._fail(issue, f"Could not read target file: {issue.file_path}")
 
         # ── 3/4/5. Agent execution + Tests (Retry Loop) ──────────────────

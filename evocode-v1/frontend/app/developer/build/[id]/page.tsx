@@ -168,7 +168,7 @@ export default function IssueDetailPage({ params }: { params: { id: string } }) 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           bug_text: signal?.canonical_summary ?? displayDesc,
-          file_path: "app/page.js", // Master layout file controlling global dark mode state
+          file_path: "", // Resolved dynamically by backend based on request content
         }),
       });
       if (!reportRes.ok) throw new Error("Failed to create issue on backend");
